@@ -32,8 +32,27 @@ fit7=lm(medv~poly(lstat,4)) #linear model with 4th power term
 fit8=lm(medv~poly(lstat,2)) #better way of fitting polynomial than the I(^2) thingy
 points(lstat,fitted(fit7),col="blue",pch=20)
 points(lstat,fitted(fit8),col="green",pch=10)
-plot(1:20,1:20,pch=1:20,cex=2) #20 availabelplotting characters, cex=2 doubles size of character
+#plot(1:20,1:20,pch=1:20,cex=2) #20 availabelplotting characters, cex=2 doubles size of character
 
 ##Qualitative predictors
+fix(Carseats) #gives editor with table of data
+names(Carseats) #gives names of carseats :)
+summary(Carseats) #gives summary of carseats. Both quantitative(with a mean etc.) and categorical/qualitative(binary toggle parameters)
+fit10=lm(Sales~.+Income:Advertising+Age:Price,Carseats) # :-operator specifies interaction between variables WITHOUT the variables themselves since they are included in the .-operator
+summary(fit10)
+contrasts(Carseats$ShelveLoc) #shows how R encodes qualitative variables when put in a linear model (Shows dummy variables)
 
-
+##Writing R functions
+regplot = function(x,y){
+  fit=lm(y~x)
+  plot(x,y)
+  abline(fit,col="red")
+}
+attach(Carseats)
+regplot(Price,Sales)
+regplot=function(x,y,...){ #allows to pass in as many arguments as wanted since they will be used the same way inside the function
+  fit=lm(y~x)
+  plot(x,y,...) ##here it will use exactly those arguments which are included in the function call
+  abline(fit,col="red")
+}
+regplot(Price, Sales, xlab="Price",ylab="Sales",col="blue", pch=20)

@@ -1,5 +1,13 @@
 #rm(list=ls())
-library(matlib)
+require(matlib)
+require(tidyverse)
+require(stats)
+require(MASS)
+require(class)
+require(pROC)
+require(pROC)
+require(plotROC)
+
 
 ##Linear discriminant analysis
 
@@ -68,12 +76,91 @@ x1.est <- (log(0.5/(1-0.5)) - betaHat.0 - betaHat.2*x2)/betaHat.1
 #Sensitivity is the percentage of correct POSITIVES which are identified
 #Specificity is the percentage of correct NEGATIVES which are identified
 
-require(stats)
-require(MASS)
-require(class)
-require(pROC)
 
 data("Weekly")
 summary(Weekly)
 pairs(Weekly,col=Weekly$Direction) #plots all covariates against each other with the binary direction as color
 
+glm.fit <- glm(Direction~Lag1+Lag2+Lag3+Lag4+Lag5+Volume,data=Weekly,family = "binomial")
+summary(glm.fit)
+#Lag2 gives p-value of 0.0296
+
+#making confusion matrix
+glm.probs_Weekly <- predict(glm.fit, type = "response")
+glm.preds_Weekly <- ifelse(glm.probs_Weekly > 0.5, "Up", "Down")
+table(glm.preds_Weekly, Weekly$Direction)
+
+Weekly_trainID <- (Weekly$Year < 2009)
+Weekly_train <- Weekly[Weekly_trainID, ]
+Weekly_test <- Weekly[!Weekly_trainID, ]
+
+glm.fit1 <- glm(Direction~Lag2,data=Weekly_train,family = "binomial")
+glm.probs_Weekly <- predict(glm.fit1,newdata=Weekly_test,type="response")
+glm.preds_Weekly <- ifelse(glm.probs_Weekly>0.5,"Up","Down")
+table(glm.preds_Weekly,Weekly_test$Direction)
+summary(glm.fit1)
+
+
+#LDA fit on same data
+lda.fit<-lda(Direction~Lag2,data=Weekly_train)
+lda.probs <- predict(lda.fit,newdata=Weekly_test,type="response")
+table(lda.probs$class,Weekly_test$Direction)
+mean(lda.probs$class==Weekly_test$Direction)
+
+#QDA on same data
+qda.fit <- qda(Direction~Lag2,data=Weekly_train)
+qda.probs <- predict(qda.fit,newdata=Weekly_test,type="response")
+table(qda.probs$class,Weekly_test$Direction)
+mean(qda.probs$class==Weekly_test$Direction)
+
+#KNN on same data
+knn.train <- as.matrix(Weekly_train$Lag2)
+knn.test <- as.matrix(Weekly_test$Lag2)
+
+set.seed(123)
+knn.fit <-knn(train = knn.train, test = knn.test, cl = Weekly_train$Direction, 
+                   k = 12, prob = T)
+table(knn.fit, Weekly_test$Direction)
+mean(knn.fit==Weekly_test$Direction)
+
+# knn error:
+K <- 30
+knn.error <- rep(NA, K)
+
+set.seed(234)
+for (k in 1:K) {
+  knn.pred <- knn(train = knn.train, test = knn.test, cl = Weekly_train$Direction, 
+                 k = k)
+  knn.error[k] <- mean(knn.pred != Weekly_test$Direction)
+}
+knn.error.df <- data.frame(k = 1:K, error = knn.error)
+ggplot(knn.error.df, aes(x = k, y = error)) + geom_point(col = "blue") + geom_line(linetype = "dotted")
+
+##Comparing methods using ROC
+
+# get the probabilities for the classified class
+knn.probs <- attributes(knn.fit)$prob
+
+# since we want the probability for Up, we need to take 1-p for the elements
+# that gives probability for Down
+down <- which(knn.fit == "Down")
+knn.probs[down] <- 1 - knn.probs[down]
+
+glmroc <- roc(response = Weekly_test$Direction, predictor = glm.probs_Weekly,direction = "<")
+ldaroc <- roc(response = Weekly_test$Direction, predictor = lda.probs$posterior[,1], direction = "<")
+qdaroc <- roc(response = Weekly_test$Direction, predictor = qda.probs$posterior[,1], direction = "<")
+knnroc <- roc(response = Weekly_test$Direction, predictor = knn.probs,direction = "<")
+
+#Calculating area under curve of each roc
+#Optimal predictor gived AUC=1, AUC=0.5 gives no information.
+#Makes sense that these are close to no information since it is on stock market data
+auc(glmroc)
+auc(ldaroc)
+auc(qdaroc)
+auc(knnroc)
+
+dat <- data.frame(Direction = Weekly_test$Direction, glm = glm.probs_Weekly, 
+                 lda = lda.probs$posterior[,1], qda = qda.probs$posterior[,1], knn = knn.probs)
+dat_long = melt_roc(dat, "Direction", c("glm", "lda", "qda", "knn"))
+ggplot(dat_long, aes(d = D, m = M, color = name)) + geom_roc(n.cuts = F) + xlab("1-Specificity") + 
+  ylab("Sensitivity")
